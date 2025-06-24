@@ -26,6 +26,8 @@ const InstructorView = () => {
   const [apiToken, setApiToken] = useState('');
   const [tokenStatus, setTokenStatus] = useState('');
   const [updateSuccess, setUpdateSuccess] = useState(false);
+  const [isDeepSyncing, setIsDeepSyncing] = useState(false);
+  const [deepSyncStatus, setDeepSyncStatus] = useState('');
 
   const imgs = { youtube: '/path/to/youtube/icon.png' };
 
@@ -357,13 +359,16 @@ const InstructorView = () => {
         const storedToken = localStorage.getItem('apiToken');
         const baseUrl = getCanvasBaseUrl();
 
-        // Synchronize course data
-        await loadCourse(
-          courseId,
-          storedToken,
-          baseUrl,
-          courseContext
-        );
+        // Only sync if not already synced this page load
+        if (!localStorage.getItem('courseSynced')) {
+          await loadCourse(
+            courseId,
+            storedToken,
+            baseUrl,
+            courseContext
+          );
+          localStorage.setItem('courseSynced', 'true');
+        }
 
         const enrollments = await fetchEnrollments(courseId);
         const studentData = await Promise.all(
@@ -393,6 +398,10 @@ const InstructorView = () => {
     };
 
     fetchData();
+    // Clear the flag on unmount so it can sync again on next page load
+    return () => {
+      localStorage.removeItem('courseSynced');
+    };
   }, []);
 
   // Effect to fetch questions when a quiz is selected
@@ -738,6 +747,40 @@ const InstructorView = () => {
     }
   };
 
+  // Add a handler for deep sync
+  const handleDeepSync = async () => {
+    setIsDeepSyncing(true);
+    setDeepSyncStatus('');
+    const courseId = fetchCurrentCourseId();
+    const storedToken = localStorage.getItem('apiToken');
+    const baseUrl = getCanvasBaseUrl();
+    try {
+      const response = await fetch(`${BACKEND_URL}/sync-all-quizzes-questions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': 'chrome-extension://' + chrome.runtime.id
+        },
+        body: JSON.stringify({
+          course_id: courseId,
+          access_token: storedToken,
+          link: baseUrl
+        }),
+        mode: 'cors',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      setDeepSyncStatus('Deep sync completed successfully!');
+    } catch (error) {
+      setDeepSyncStatus('Deep sync failed: ' + error.message);
+    } finally {
+      setIsDeepSyncing(false);
+    }
+  };
+
   const styles = {
     body: {
       backgroundColor: '#f7fafc',
@@ -964,23 +1007,6 @@ const InstructorView = () => {
   return (
     <body style={styles.body}>
       <div style={styles.container}>
-        {localStorage.getItem('apiToken') ? (
-          <div className="api-token-input"></div>
-        ) : (
-          <div className="api-token-input">
-            <input
-              type="password"
-              placeholder="Enter your API token"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-            />
-            <button onClick={() => sendTokenToServer(apiToken)}>
-              Save Token
-            </button>
-            {tokenStatus && <p>{tokenStatus}</p>}
-          </div>
-        )}
-
         <div>
           <h2 style={styles.title}>Class Performance Overview</h2>
           <div style={styles.grid}>
@@ -1267,7 +1293,7 @@ const InstructorView = () => {
       <div style={styles.container}>
         <div>
           <h2 style={styles.title}>Course Context</h2>
-          <div style={{ marginBottom: '1rem' }}>
+          <div style={{ marginBottom: '1rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
             <button
               style={{
                 ...styles.messageButton,
@@ -1280,18 +1306,42 @@ const InstructorView = () => {
             >
               {isSyncingCourse ? 'Syncing Course...' : 'Refresh Course Data'}
             </button>
-            {syncError && (
-              <div style={{
-                color: '#e53e3e',
+            <button
+              style={{
+                ...styles.messageButton,
                 marginBottom: '1rem',
-                padding: '0.5rem',
-                backgroundColor: '#fff5f5',
-                borderRadius: '0.375rem'
-              }}>
-                Error: {syncError}
-              </div>
-            )}
+                backgroundColor: isDeepSyncing ? '#a0aec0' : '#4299e1',
+                cursor: isDeepSyncing ? 'not-allowed' : 'pointer'
+              }}
+              onClick={handleDeepSync}
+              disabled={isDeepSyncing}
+            >
+              {isDeepSyncing ? 'Deep Syncing...' : 'Deep Sync Quizzes/Questions'}
+            </button>
           </div>
+          {deepSyncStatus && (
+            <div style={{
+              color: deepSyncStatus.includes('success') ? '#48bb78' : '#e53e3e',
+              marginBottom: '1rem',
+              padding: '0.5rem',
+              backgroundColor: deepSyncStatus.includes('success') ? '#f0fff4' : '#fff5f5',
+              borderRadius: '0.375rem',
+              textAlign: 'center'
+            }}>
+              {deepSyncStatus}
+            </div>
+          )}
+          {syncError && (
+            <div style={{
+              color: '#e53e3e',
+              marginBottom: '1rem',
+              padding: '0.5rem',
+              backgroundColor: '#fff5f5',
+              borderRadius: '0.375rem'
+            }}>
+              Error: {syncError}
+            </div>
+          )}
           <textarea
             style={styles.textArea}
             value={courseContext}

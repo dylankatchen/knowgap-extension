@@ -76,12 +76,16 @@ const StudentView = () => {
   const [apiToken, setApiToken] = useState('');
   const [tokenStatus, setTokenStatus] = useState('');
   const [hasToken, setHasToken] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [quizzes, setQuizzes] = useState([]);
+  const [selectedQuiz, setSelectedQuiz] = useState('');
+  const [watchedVideos, setWatchedVideos] = useState({});
 
   const imgs = { youtube };
 
-  const getCanvasBaseUrl = () => {
+  const getCanvasDomain = () => {
     const url = window.location.href;
-    const match = url.match(/(https?:\/\/[^\/]+)/);
+    const match = url.match(/^https?:\/\/(.*?)(?:\/|$)/);
     return match ? match[1] : null;
   };
 
@@ -124,9 +128,9 @@ const StudentView = () => {
   };
 
   const fetchAssignments = async (courseId) => {
-    const baseUrl = getCanvasBaseUrl();
-    if (!baseUrl) {
-      console.error('Unable to determine Canvas base URL');
+    const canvasDomain = getCanvasDomain();
+    if (!canvasDomain) {
+      console.error('Unable to determine Canvas domain');
       return;
     }
 
@@ -147,7 +151,7 @@ const StudentView = () => {
 
     try {
       const assignmentsResponse = await fetch(
-        `${baseUrl}/api/v1/courses/${courseId}/assignments`,
+        `https://${canvasDomain}/api/v1/courses/${courseId}/assignments`,
         requestOptions
       );
       const assignmentsResult = await assignmentsResponse.json();
@@ -156,7 +160,7 @@ const StudentView = () => {
         assignmentsResult.map(async (assignment) => {
           try {
             const submissionResponse = await fetch(
-              `${baseUrl}/api/v1/courses/${courseId}/assignments/${assignment.id}/submissions/self`,
+              `https://${canvasDomain}/api/v1/courses/${courseId}/assignments/${assignment.id}/submissions/self`,
               requestOptions
             );
             if (!submissionResponse.ok) {
@@ -192,11 +196,11 @@ const StudentView = () => {
   };
 
   const fetchEnrollment = async (courseId) => {
-    const baseUrl = getCanvasBaseUrl();
+    const canvasDomain = getCanvasDomain();
     const storedToken = localStorage.getItem('apiToken');
 
-    if (!baseUrl || !storedToken) {
-      console.error('Missing base URL or API token');
+    if (!canvasDomain || !storedToken) {
+      console.error('Missing Canvas domain or API token');
       return null;
     }
 
@@ -211,11 +215,11 @@ const StudentView = () => {
 
     try {
       const response = await fetch(
-        `${baseUrl}/api/v1/courses/${courseId}/enrollments?user_id=self`,
+        `https://${canvasDomain}/api/v1/courses/${courseId}/enrollments?user_id=self`,
         requestOptions
       );
       const enrollmentData = await response.json();
-      return enrollmentData[0].grades.current_score;
+      return enrollmentData[0];
     } catch (error) {
       console.error('Error fetching enrollment data:', error);
       return null;
@@ -223,46 +227,59 @@ const StudentView = () => {
   };
 
   const fetchUserProfile = async () => {
-    const baseUrl = getCanvasBaseUrl();
     const storedToken = localStorage.getItem('apiToken');
-
-    if (!baseUrl || !storedToken) {
-      console.error('Missing base URL or API token');
-      return;
+    const canvasDomain = getCanvasDomain();
+    if (!storedToken || !canvasDomain) {
+      console.error('Missing token or domain');
+      return null;
     }
-
-    const myHeaders = new Headers();
-    myHeaders.append('Authorization', `Bearer ${storedToken}`);
-
-    const requestOptions = {
-      method: 'GET',
-      headers: myHeaders,
-      redirect: 'follow',
-    };
-
     try {
-      const response = await fetch(
-        `${baseUrl}/api/v1/users/self`,
-        requestOptions
-      );
+      const response = await fetch(`${BACKEND_URL}/get-student-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': 'chrome-extension://' + (chrome?.runtime?.id || '')
+        },
+        body: JSON.stringify({
+          access_token: storedToken,
+          canvas_domain: canvasDomain
+        }),
+        mode: 'cors',
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Failed to fetch user profile');
       const profileData = await response.json();
-      setStudentName(profileData.name);
-      return profileData.id;
+      if (profileData && profileData.profile) {
+        setStudentName(profileData.profile.name);
+        return profileData.profile.id;
+      } else {
+        setStudentName('Unknown Student');
+        return null;
+      }
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      setStudentName('Unknown Student');
+      return null;
     }
   };
 
   const fetchVideoRecommendations = async (userId, courseId) => {
     try {
+      const studentIdStr = String(userId);
+      const storedToken = localStorage.getItem('apiToken');
+      const baseUrl = getCanvasDomain();
+      console.log('Debug - Sending request with:', { student_id: studentIdStr, course_id: courseId, access_token: storedToken, link: baseUrl });
       const response = await new Promise((resolve, reject) => {
         chrome.runtime.sendMessage({
           type: 'API_REQUEST',
           url: `${BACKEND_URL}/get-assessment-videos`,
           method: 'POST',
           body: {
-            user_id: userId,
+            student_id: studentIdStr,
             course_id: courseId,
+            access_token: storedToken,
+            link: baseUrl,
           }
         }, (response) => {
           if (chrome.runtime.lastError) {
@@ -349,41 +366,228 @@ const StudentView = () => {
     }
   };
 
+  const fetchQuizzes = async (courseId) => {
+    const canvasDomain = getCanvasDomain();
+    const storedToken = localStorage.getItem('apiToken');
+    if (!canvasDomain || !storedToken) {
+      console.error('Missing Canvas domain or API token');
+      return [];
+    }
+    const myHeaders = new Headers();
+    myHeaders.append('Authorization', `Bearer ${storedToken}`);
+    const requestOptions = {
+      method: 'GET',
+      headers: myHeaders,
+      redirect: 'follow',
+    };
+    try {
+      let allQuizzes = [];
+      let nextUrl = `https://${canvasDomain}/api/v1/courses/${courseId}/quizzes?per_page=100`;
+      while (nextUrl) {
+        const response = await fetch(nextUrl, requestOptions);
+        const quizzesData = await response.json();
+        allQuizzes = [...allQuizzes, ...quizzesData];
+        const linkHeader = response.headers.get('Link');
+        if (linkHeader) {
+          const nextMatch = linkHeader.match(/<([^>]+)>; rel="next"/);
+          nextUrl = nextMatch ? nextMatch[1] : null;
+        } else {
+          nextUrl = null;
+        }
+      }
+      return allQuizzes;
+    } catch (error) {
+      console.error('Error fetching quizzes:', error);
+      return [];
+    }
+  };
+
+  // Helper to get watched key
+  const getWatchedKey = () => {
+    const courseId = fetchCurrentCourseId();
+    return `watchedVideos_${userId || 'nouser'}_${courseId || 'nocourse'}`;
+  };
+
+  // Load watched videos from localStorage
+  useEffect(() => {
+    const key = getWatchedKey();
+    const stored = localStorage.getItem(key);
+    if (stored) {
+      setWatchedVideos(JSON.parse(stored));
+    }
+  }, [userId]);
+
+  // Save watched videos to localStorage when changed
+  useEffect(() => {
+    const key = getWatchedKey();
+    localStorage.setItem(key, JSON.stringify(watchedVideos));
+  }, [watchedVideos]);
+
+  // Handler for checkbox
+  const handleWatchedChange = (videoId) => {
+    setWatchedVideos(prev => {
+      const updated = { ...prev, [videoId]: !prev[videoId] };
+      return updated;
+    });
+  };
+
+  // Effect 1: Fetch userId on mount
+  useEffect(() => {
+    const getUserId = async () => {
+      const id = await fetchUserProfile();
+      setUserId(id);
+    };
+    getUserId();
+  }, []);
+
+  // Add this helper function to fetch the student's grade from the backend
+  const fetchStudentGrade = async (courseId, userId) => {
+    try {
+      const storedToken = localStorage.getItem('apiToken');
+      const canvasDomain = getCanvasDomain();
+      if (!storedToken || !canvasDomain || !courseId || !userId) {
+        console.error('Missing required data for fetching student grade');
+        return null;
+      }
+      const response = await fetch(`${BACKEND_URL}/get-student-grade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': 'chrome-extension://' + (chrome?.runtime?.id || '')
+        },
+        body: JSON.stringify({
+          course_id: courseId,
+          user_id: userId,
+          access_token: storedToken,
+          canvas_domain: canvasDomain
+        }),
+        mode: 'cors',
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      if (data && data.grade !== undefined && data.grade !== null) {
+        return data.grade;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching student grade:', error);
+      return null;
+    }
+  };
+
+  // In the useEffect that runs when userId changes, fetch and set the grade
   useEffect(() => {
     const updateCourseAndData = async () => {
       const courseId = fetchCurrentCourseId();
       const storedToken = localStorage.getItem('apiToken');
-      const baseUrl = getCanvasBaseUrl();
+      const baseUrl = getCanvasDomain();
 
-      if (courseId && storedToken && baseUrl) {
+      console.log('Debug - Initial conditions:', {
+        courseId,
+        hasToken: !!storedToken,
+        baseUrl,
+        userId
+      });
+
+      if (!userId) {
+        console.warn('StudentView: userId is missing, not calling /update-course-db');
+        return;
+      }
+
+      if (courseId && storedToken && baseUrl && userId) {
+        try {
+          console.log('Debug - Calling /update-course-db for student');
+          await fetch(`${BACKEND_URL}/update-course-db`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Origin': 'chrome-extension://' + chrome.runtime.id
+            },
+            body: JSON.stringify({
+              course_id: courseId,
+              access_token: storedToken,
+              link: baseUrl,
+              student_id: String(userId)
+            }),
+            mode: 'cors',
+            credentials: 'include'
+          });
+        } catch (error) {
+          console.error('Error calling /update-course-db:', error);
+        }
+
+        // Fetch and set the student's grade from the backend
+        try {
+          const grade = await fetchStudentGrade(courseId, userId);
+          let gradeValue = 'N/A';
+          if (grade && typeof grade === 'object') {
+            gradeValue = grade.current_score ?? grade.final_score ?? 'N/A';
+          } else if (grade !== null && grade !== undefined && grade !== '') {
+            gradeValue = grade;
+          }
+          setClassGrade(gradeValue);
+        } catch (error) {
+          setClassGrade('N/A');
+        }
+
         await fetchAssignments(courseId);
         const enrollment = await fetchEnrollment(courseId);
-        if (enrollment) {
+        if (enrollment && enrollment.user && enrollment.user.name) {
           setStudentName(enrollment.user.name);
+        } else {
+          setStudentName('Unknown Student');
+          console.warn('StudentView: enrollment or enrollment.user is missing:', enrollment);
+          // Fallback: try to get userId from localStorage or another source if possible
         }
-        const userId = await fetchUserProfile();
-        let recommendations = null;
+        // Fetch quizzes for the dropdown
+        const quizzesData = await fetchQuizzes(courseId);
+        setQuizzes(quizzesData);
+        // Update course context first
+        if (assignments.length > 0 && classGrade !== 'N/A' && studentName) {
+          try {
+            console.log('Debug - Updating course context with:', {
+              courseId,
+              assignments: assignments.length,
+              classGrade,
+              studentName
+            });
+            await updateCourseContext(courseId, assignments, classGrade, studentName);
+            console.log('Debug - Course context updated successfully');
+          } catch (error) {
+            console.error('Error updating course context:', error);
+          }
+        }
+
+        // Then fetch video recommendations
         if (userId) {
-          recommendations = await fetchVideoRecommendations(userId, courseId);
+          console.log('Debug - Fetching video recommendations for:', { userId, courseId });
+          const recommendations = await fetchVideoRecommendations(userId, courseId);
+          console.log('Debug - Video recommendations response:', recommendations);
           if (recommendations) {
             setRecommendedVideos(formatVideoRecommendations(recommendations));
           }
         }
-
-        // Only call updateCourseContext if all required data is present
-        if (assignments.length > 0 && classGrade !== 'N/A' && studentName) {
-          try {
-            await updateCourseContext(courseId, assignments, classGrade, studentName);
-          } catch (error) {
-            // Log error but do not set syncError if main data is present
-            console.error('Error updating course context:', error);
-          }
-        }
+      } else {
+        console.log('Debug - Missing required data:', {
+          hasCourseId: !!courseId,
+          hasToken: !!storedToken,
+          hasBaseUrl: !!baseUrl,
+          hasUserId: !!userId
+        });
       }
     };
 
-    updateCourseAndData();
-  }, []);
+    if (userId) {
+      updateCourseAndData();
+    } else {
+      console.warn('StudentView: userId not available, skipping updateCourseAndData');
+    }
+  }, [userId]);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('apiToken');
@@ -442,7 +646,7 @@ const StudentView = () => {
         },
         body: JSON.stringify({
           access_token: token,
-          link: getCanvasBaseUrl(),
+          link: getCanvasDomain(),
         }),
         mode: 'cors',
         credentials: 'include'
@@ -469,7 +673,7 @@ const StudentView = () => {
   const { riskLevel } = calculateRisk();
 
   const validateToken = async (token) => {
-    const baseUrl = getCanvasBaseUrl();
+    const baseUrl = getCanvasDomain();
     if (!baseUrl) {
       setTokenStatus('Error: Unable to determine Canvas URL');
       return false;
@@ -517,37 +721,20 @@ const StudentView = () => {
     }
   };
 
+  // Sort videos: unwatched first
+  const sortedVideos = recommendedVideos
+    .filter(video => !selectedQuiz || video.quizName === selectedQuiz)
+    .sort((a, b) => {
+      const aWatched = watchedVideos[a.id] || false;
+      const bWatched = watchedVideos[b.id] || false;
+      return aWatched - bWatched;
+    });
+
   return (
     <body className="student-view">
       <div className="container">
         {!hasToken && !localStorage.getItem('apiToken') ? (
-          <div className="api-token-input">
-            <h3>Enter Your Canvas API Token</h3>
-            <p className="token-instructions">
-              To access your course data, please enter your Canvas API token.
-              <a
-                href="https://community.canvaslms.com/t5/Student-Guide/How-do-I-manage-API-access-tokens-as-a-student/ta-p/273"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Get your token here
-              </a>
-            </p>
-            <input
-              type="password"
-              placeholder="Paste your API token here"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-            />
-            <button onClick={handleTokenSubmit}>
-              Save Token
-            </button>
-            {tokenStatus && (
-              <p className={`token-status ${tokenStatus.includes('successfully') ? 'success' : 'error'}`}>
-                {tokenStatus}
-              </p>
-            )}
-          </div>
+          null
         ) : (
           <div>
             {isSyncingCourse && (
@@ -561,9 +748,10 @@ const StudentView = () => {
               </div>
             )}
             <div className="performance-overview fade-in">
-              <h2 className="overview-title">Your Performance Overview</h2>
-              <h3>{studentName}</h3>
-              <div className="overview-grid">
+              <h2 className="overview-title" style={{ textAlign: 'center' }}>
+                {`Performance Overview for ${studentName || 'Student'}`}
+              </h2>
+              <div className="overview-grid" style={{ justifyContent: 'center', textAlign: 'center' }}>
                 <div>
                   <h3 className="risk-level">Risk Level</h3>
                   <p className={`risk-value ${getRiskLevelClass(riskLevel)}`}>
@@ -649,31 +837,57 @@ const StudentView = () => {
       {activeTab === 'videos' && (
         <div className="content-container slide-in">
           <h2 className="content-title">Recommended Videos</h2>
-          <ul>
-            {recommendedVideos.map((video, index) => (
-              <li
-                key={video.id}
-                className="list-item slide-in"
-                style={{ animationDelay: `${index * 0.1}s` }}
-              >
-                <div className="video-card">
-                  <div className="video-info">
-                    <h3 className="item-title">{video.title}</h3>
-                    <p className="video-channel">{video.channel}</p>
-                    <p className="video-reason">{video.reason}</p>
-                  </div>
-                </div>
-                <a
-                  href={video.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="youtube-link"
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', marginBottom: '0.5rem' }}>Select Quiz to View Videos:</label>
+            <select
+              value={selectedQuiz}
+              onChange={e => setSelectedQuiz(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: '0.25rem', border: '1px solid #e2e8f0' }}
+            >
+              <option value="">Select Quiz</option>
+              {quizzes.map((quiz) => (
+                <option key={quiz.id} value={quiz.title || quiz.name}>
+                  {quiz.title || quiz.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          {selectedQuiz && (
+            <ul>
+              {sortedVideos.map((video, index) => (
+                <li
+                  key={video.id}
+                  className="list-item slide-in"
+                  style={{ animationDelay: `${index * 0.1}s` }}
                 >
-                  <img src={video.thumbnail} alt="youtube-logo" />
-                </a>
-              </li>
-            ))}
-          </ul>
+                  <a
+                    href={video.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="video-card"
+                    style={{ display: 'flex', textDecoration: 'none', color: 'inherit', flex: 1 }}
+                  >
+                    <div className="video-info">
+                      <h3 className="item-title">{video.title}</h3>
+                      <p className="video-channel">{video.channel}</p>
+                      <p className="video-reason">{video.reason}</p>
+                    </div>
+                  </a>
+                  {/* Watched checkbox */}
+                  <div style={{ display: 'flex', alignItems: 'center', marginLeft: '16px' }}>
+                    <input
+                      type="checkbox"
+                      checked={!!watchedVideos[video.id]}
+                      onChange={() => handleWatchedChange(video.id)}
+                      id={`watched-${video.id}`}
+                      style={{ marginRight: '6px' }}
+                    />
+                    <label htmlFor={`watched-${video.id}`}>Watched</label>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

@@ -229,29 +229,41 @@ const Popup = () => {
   };
 
   return (
-    <div className="container" style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className="container" style={{ display: 'flex', flexDirection: 'column', margin: '0 auto', ...( !localStorage.getItem('apiToken') && !userRole ? { maxWidth: '600px', maxHeight: '200px', minHeight: '120px', justifyContent: 'center' } : {} ) }}>
       <div style={{ flex: 1 }}>
         {!localStorage.getItem('apiToken') && !userRole ? (
           <>
-            <div className="token-input-container">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '120px', width: '100%' }}>
               <input
                 type="password"
                 value={apiToken}
                 onChange={e => setApiToken(e.target.value)}
                 placeholder="Enter your Canvas API token"
                 className="token-input"
+                style={{ marginBottom: '1rem', width: '100%', maxWidth: '250px', marginLeft: 'auto', marginRight: 'auto', display: 'block' }}
               />
-              <button
-                onClick={handleTokenSubmit}
-                className="token-submit"
-              >
-                Submit Token
-              </button>
               {tokenStatus && (
-                <p className={`token-status ${tokenStatus.includes('successfully') ? 'success' : 'error'}`}>
+                <p className={`token-status ${tokenStatus.includes('successfully') ? 'success' : 'error'}`}
+                  style={{ textAlign: 'center' }}>
                   {tokenStatus}
                 </p>
               )}
+              <div style={{ width: '100%', maxWidth: '250px', margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem' }}>
+                <button
+                  onClick={handleTokenSubmit}
+                  className="token-submit"
+                  style={{ marginLeft: 0 }}
+                >
+                  Submit Token
+                </button>
+                <button
+                  className="feedback-button px-4 py-2 rounded"
+                  onClick={() => window.open(FEEDBACK_URL, "_blank")}
+                  style={{ marginRight: 0 }}
+                >
+                  Give Feedback
+                </button>
+              </div>
             </div>
           </>
         ) : (
@@ -282,18 +294,21 @@ const Popup = () => {
           </>
         )}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '2rem' }}>
+      <div style={{ width: '100%', display: localStorage.getItem('apiToken') ? 'flex' : 'block', justifyContent: localStorage.getItem('apiToken') ? 'flex-end' : undefined, alignItems: 'center', marginTop: localStorage.getItem('apiToken') ? 0 : undefined }}>
         {localStorage.getItem('apiToken') && (
           <button onClick={removeToken} className="token-remove">
             Remove Token
           </button>
         )}
-        <button
-          className="feedback-button px-4 py-2 rounded"
-          onClick={() => window.open(FEEDBACK_URL, "_blank")}
-        >
-          Give Feedback
-        </button>
+        {localStorage.getItem('apiToken') && (
+          <button
+            className="feedback-button px-4 py-2 rounded"
+            onClick={() => window.open(FEEDBACK_URL, "_blank")}
+            style={{ marginLeft: 'auto' }}
+          >
+            Give Feedback
+          </button>
+        )}
       </div>
     </div>
   );
