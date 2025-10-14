@@ -4,6 +4,8 @@ A simple Chrome/Firefox web extension.
 
 ## Installation
 
+#test
+
 ### Chrome/Edge
 1. Open Chrome/Edge
 2. Go to `chrome://extensions/`
