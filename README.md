@@ -1,4 +1,4 @@
-# KnowGap - Course Video Recommendations & Student Risk Prediction
+# KnowGap - Course Video Recommendations & Student Risk Prediction.
 
 ## Overview
 
