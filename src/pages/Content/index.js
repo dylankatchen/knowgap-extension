@@ -1,5 +1,5 @@
 import React from 'react';
-import ReactDOM from 'react-dom';
+import { createRoot } from 'react-dom/client';
 import Popup from '../Popup/Popup';
 
 function injectSidebar() {
@@ -12,7 +12,8 @@ function injectSidebar() {
     sidebarContainer.style.display = 'block';
     sidebarContainer.style.backgroundColor = 'transparent'; // Add this line
 
-    const root = ReactDOM.createRoot(sidebarContainer);
+    //const root = ReactDOM.createRoot(sidebarContainer);
+    const root = createRoot(sidebarContainer);
     root.render(<Popup />);
 
     document.body.appendChild(sidebarContainer);

@@ -27,8 +27,8 @@ var compiler = webpack(config);
 
 var server = new WebpackDevServer(
   {
-    https: false,
-    hot: true,
+    https: true,
+    hot: false,
     liveReload: false,
     client: {
       webSocketTransport: 'sockjs',
