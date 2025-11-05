@@ -731,7 +731,7 @@ const StudentView = () => {
     });
 
   return (
-    <body className="student-view">
+    <div className="student-view">
       <div className="container">
         {!hasToken && !localStorage.getItem('apiToken') ? (
           null
@@ -968,7 +968,7 @@ const StudentView = () => {
           </div>
         </div>
       )}
-    </body>
+    </div>
   );
 };
 
