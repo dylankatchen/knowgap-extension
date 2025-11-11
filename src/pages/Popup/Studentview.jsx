@@ -5,18 +5,18 @@ import youtube from './imgs/youtube.png';
 const BACKEND_URL = process.env.BACKEND_URL;
 
 const calculateSlope = (assignments) => {
-  const lastFiveAssignments = assignments
+  const lastTenAssignments = assignments
     .filter(
       (assignment) => assignment.score !== 'N/A' && assignment.score !== 'Error'
     )
-    .slice(-5);
+    .slice(-10);
 
-  if (lastFiveAssignments.length < 2) {
+  if (lastTenAssignments.length < 2) {
     return 0;
   }
 
-  const x = Array.from({ length: lastFiveAssignments.length }, (_, i) => i + 1);
-  const y = lastFiveAssignments.map(
+  const x = Array.from({ length: lastTenAssignments.length }, (_, i) => i + 1);
+  const y = lastTenAssignments.map(
     (assignment) => (Number(assignment.score) / assignment.pointsPossible) * 100
   );
 
@@ -731,7 +731,7 @@ const StudentView = () => {
     });
 
   return (
-    <div className="student-view">
+    <body className="student-view">
       <div className="container">
         {!hasToken && !localStorage.getItem('apiToken') ? (
           null
@@ -968,7 +968,7 @@ const StudentView = () => {
           </div>
         </div>
       )}
-    </div>
+    </body>
   );
 };
 
