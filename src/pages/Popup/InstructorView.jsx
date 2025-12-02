@@ -1005,7 +1005,7 @@ const InstructorView = () => {
   };
 
   return (
-    <body style={styles.body}>
+    <div style={styles.body}>
       <div style={styles.container}>
         <div>
           <h2 style={styles.title}>Class Performance Overview</h2>
@@ -1371,7 +1371,7 @@ const InstructorView = () => {
           )}
         </div>
       </div>
-    </body>
+    </div>
   );
 };
 
