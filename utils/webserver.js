@@ -13,10 +13,15 @@ var options = config.chromeExtensionBoilerplate || {};
 var excludeEntriesToHotReload = options.notHotReload || [];
 
 for (var entryName in config.entry) {
-  if (excludeEntriesToHotReload.indexOf(entryName) === -1) {
+  if (
+    excludeEntriesToHotReload.indexOf(entryName) === -1 &&
+    entryName !== 'contentScript' &&
+    entryName !== 'background' &&
+    entryName !== 'devtools'
+  ) {
     config.entry[entryName] = [
       'webpack/hot/dev-server',
-      `webpack-dev-server/client?hot=true&hostname=localhost&port=${env.PORT}`,
+      `webpack-dev-server/client/index.js?protocol=wss&hostname=localhost&port=${env.PORT}&pathname=/ws&hot=true&live-reload=false`,
     ].concat(config.entry[entryName]);
   }
 }
@@ -27,20 +32,26 @@ var compiler = webpack(config);
 
 var server = new WebpackDevServer(
   {
-    https: false,
+    server: {
+      type: 'https',
+    },
     hot: true,
     liveReload: false,
     client: {
-      webSocketTransport: 'sockjs',
+      webSocketURL: {
+        protocol: 'wss',
+        hostname: 'localhost',
+        port: env.PORT,
+        pathname: '/ws',
+      },
     },
-    webSocketServer: 'sockjs',
     host: 'localhost',
     port: env.PORT,
     static: {
       directory: path.join(__dirname, '../build'),
     },
     devMiddleware: {
-      publicPath: `http://localhost:${env.PORT}/`,
+      publicPath: `https://localhost:${env.PORT}/`,
       writeToDisk: true,
     },
     headers: {

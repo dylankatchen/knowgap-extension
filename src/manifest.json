@@ -14,12 +14,14 @@
     "https://canvas.instructure.com/*",
     "https://webcourses.ucf.edu/*",
     "https://gen-ai-prime-3ddeabb35bd7.herokuapp.com/*",
+    "http://127.0.0.1:5000/*",
     "http://localhost:5000/*"
   ],
   "host_permissions": [
     "https://canvas.instructure.com/*",
     "https://webcourses.ucf.edu/*",
     "https://gen-ai-prime-3ddeabb35bd7.herokuapp.com/*",
+    "http://127.0.0.1:5000/*",
     "http://localhost:5000/*"
   ],
   "content_scripts": [
