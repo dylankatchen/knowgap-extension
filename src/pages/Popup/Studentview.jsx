@@ -5,18 +5,18 @@ import youtube from './imgs/youtube.png';
 const BACKEND_URL = process.env.BACKEND_URL;
 
 const calculateSlope = (assignments) => {
-  const lastTenAssignments = assignments
+  const lastThreeAssignments = assignments
     .filter(
       (assignment) => assignment.score !== 'N/A' && assignment.score !== 'Error'
     )
-    .slice(-10);
+    .slice(-3);
 
-  if (lastTenAssignments.length < 2) {
+  if (lastThreeAssignments.length < 2) {
     return 0;
   }
 
-  const x = Array.from({ length: lastTenAssignments.length }, (_, i) => i + 1);
-  const y = lastTenAssignments.map(
+  const x = Array.from({ length: lastThreeAssignments.length }, (_, i) => i + 1);
+  const y = lastThreeAssignments.map(
     (assignment) => (Number(assignment.score) / assignment.pointsPossible) * 100
   );
 
