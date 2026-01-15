@@ -5,18 +5,20 @@ import youtube from './imgs/youtube.png';
 const BACKEND_URL = process.env.BACKEND_URL;
 
 const calculateSlope = (assignments) => {
-  const lastThreeAssignments = assignments
+  const lastFiveAssignments = assignments
     .filter(
       (assignment) => assignment.score !== 'N/A' && assignment.score !== 'Error'
     )
-    .slice(-3);
+    .slice(-5);
 
-  if (lastThreeAssignments.length < 2) {
-    return 0;
+  console.log('calculateSlope - lastFiveAssignments:', lastFiveAssignments);
+
+  if (lastFiveAssignments.length < 2) {
+    return [0]; // Return array with just 0 if not enough data
   }
 
-  const x = Array.from({ length: lastThreeAssignments.length }, (_, i) => i + 1);
-  const y = lastThreeAssignments.map(
+  const x = Array.from({ length: lastFiveAssignments.length }, (_, i) => i + 1);
+  const y = lastFiveAssignments.map(
     (assignment) => (Number(assignment.score) / assignment.pointsPossible) * 100
   );
 
@@ -27,7 +29,9 @@ const calculateSlope = (assignments) => {
   const sumXSquared = x.reduce((a, b) => a + b * b, 0);
 
   const slope = (n * sumXY - sumX * sumY) / (n * sumXSquared - sumX * sumX);
-  return slope;
+  
+  // Return array with slope at index 0, then all the percentage grades
+  return [slope, ...y];
 };
 
 const normalizeGts = (slope, minSlope = -10, maxSlope = 10) => {
@@ -35,10 +39,6 @@ const normalizeGts = (slope, minSlope = -10, maxSlope = 10) => {
 };
 
 const calculateRiskIndex = (rps, cgs, gts, currentScore) => {
-  if (currentScore <= 69) {
-    return { riskLevel: 'High Risk' };
-  }
-
   const weights = {
     rps: 0.3,
     cgs: 0.55,
@@ -48,15 +48,21 @@ const calculateRiskIndex = (rps, cgs, gts, currentScore) => {
   const riskIndex = weights.rps * rps + weights.cgs * cgs + weights.gts * gts;
 
   let riskLevel;
-  if (riskIndex > 70) {
+  
+  // Special case: If grade is below 69 but showing strong improvement
+  if (currentScore < 69 && gts > 75) {
+    riskLevel = 'Medium Risk';
+  }
+  // Normal risk index calculation
+  else if (riskIndex >= 75) {
     riskLevel = 'Low Risk';
-  } else if (riskIndex > 40 && riskIndex <= 70) {
+  } else if (riskIndex >= 69 && riskIndex < 75) {
     riskLevel = 'Medium Risk';
   } else {
     riskLevel = 'High Risk';
   }
 
-  return { riskLevel };
+  return { riskLevel, riskIndex };
 };
 
 const normalizeRiskLevel = (riskLevel) => {
@@ -599,7 +605,9 @@ const StudentView = () => {
   }, []);
 
   const calculateRisk = () => {
-    const slope = calculateSlope(assignments);
+    const slopeData = calculateSlope(assignments); // Returns [slope, grade1, grade2, ...]
+    const slope = slopeData[0]; // Extract slope from index 0
+    const grades = slopeData.slice(1); // Extract all the percentage grades
     const gts = normalizeGts(slope);
 
     const currentGrade = parseFloat(classGrade);
@@ -607,8 +615,14 @@ const StudentView = () => {
       return { riskLevel: 'Medium Risk' };
     }
 
-    const rps = currentGrade;
+    // Calculate rps as the average of all the assignment scores
+    const rps = grades.length > 0 
+      ? grades.reduce((sum, grade) => sum + grade, 0) / grades.length 
+      : currentGrade;
+    
     const cgs = currentGrade;
+    console.log('cgs:', cgs);
+    console.log('rps (average of last assignments):', rps);
 
     return calculateRiskIndex(rps, cgs, gts, currentGrade);
   };
