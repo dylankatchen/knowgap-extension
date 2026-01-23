@@ -16,6 +16,7 @@ const InstructorView = () => {
   const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(true);
   const [isSyncingCourse, setIsSyncingCourse] = useState(false);
   const [syncError, setSyncError] = useState(null);
+  const [showRiskLevels, setShowRiskLevels] = useState(true);
   const [newVideo, setNewVideo] = useState({
     title: '',
     url: '',
@@ -370,6 +371,22 @@ const InstructorView = () => {
           localStorage.setItem('courseSynced', 'true');
         }
 
+        // --- FETCH INITIAL RISK TOGGLE STATE FROM DATABASE ---
+        try {
+          console.log('Fetching initial risk toggle state...');
+          const toggleResponse = await fetch(`${BACKEND_URL}/get-toggle-risk/${courseId}`);
+          if (toggleResponse.ok) {
+            const toggleData = await toggleResponse.json();
+            if (toggleData && typeof toggleData.toggle_risk !== 'undefined') {
+              setShowRiskLevels(toggleData.toggle_risk);
+              console.log('Initial Risk State Loaded:', toggleData.toggle_risk);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching initial risk state:', error);
+        }
+        // ------------------------------------------------------
+
         const enrollments = await fetchEnrollments(courseId);
         const studentData = await Promise.all(
           enrollments.map(async (enrollment) => {
@@ -584,7 +601,7 @@ const InstructorView = () => {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}/add-video`, {
+      const response = await fetch(`${BACKEND_URL}add-video`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -778,6 +795,48 @@ const InstructorView = () => {
       setDeepSyncStatus('Deep sync failed: ' + error.message);
     } finally {
       setIsDeepSyncing(false);
+    }
+  };
+
+  // --- UPDATED FUNCTION: HANDLE RISK TOGGLE WITH BETTER ERROR HANDLING ---
+  const handleToggleRisk = async () => {
+    const courseId = fetchCurrentCourseId();
+    
+    // Calculate new state
+    const newRiskState = !showRiskLevels;
+
+    console.log(`[Risk Toggle] Sending request for Course ${courseId} (No Token)`);
+
+    try {
+      // Fix potential double slash in URL
+      const baseUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+
+      const response = await fetch(`${baseUrl}/update-toggle-risk/${courseId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Origin': 'chrome-extension://' + chrome.runtime.id
+          // Authorization header removed
+        },
+        body: JSON.stringify({
+          toggle_risk: newRiskState
+        }),
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        console.log('[SUCCESS] Database updated successfully.');
+        console.log('Server Message:', result.message);
+        setShowRiskLevels(newRiskState);
+      } else {
+        console.error('[FAILED] Backend rejected the request.');
+        console.error('Error Code:', response.status);
+        console.error('Backend Response:', result);
+      }
+    } catch (error) {
+      console.error('[NETWORK ERROR] Request failed:', error);
     }
   };
 
@@ -1008,27 +1067,46 @@ const InstructorView = () => {
     <div style={styles.body}>
       <div style={styles.container}>
         <div>
-          <h2 style={styles.title}>Class Performance Overview</h2>
-          <div style={styles.grid}>
-            <div style={styles.item}>
-              <h3 style={styles.itemTitle}>High Risk</h3>
-              <p style={styles.highRisk}>
-                {getClassPerformanceOverview().highRiskCount}
-              </p>
-            </div>
-            <div style={styles.item}>
-              <h3 style={styles.itemTitle}>Medium Risk</h3>
-              <p style={styles.mediumRisk}>
-                {getClassPerformanceOverview().mediumRiskCount}
-              </p>
-            </div>
-            <div style={styles.item}>
-              <h3 style={styles.itemTitle}>Low Risk</h3>
-              <p style={styles.lowRisk}>
-                {getClassPerformanceOverview().lowRiskCount}
-              </p>
-            </div>
+          {/* Header Row with Toggle Button */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h2 style={{ ...styles.title, marginBottom: 0 }}>Class Performance Overview</h2>
+            <button 
+              onClick={handleToggleRisk}
+              style={{
+                ...styles.button,
+                backgroundColor: showRiskLevels ? '#3182ce' : '#718096', // Gray when turning off, Blue when turning on
+                fontSize: '0.875rem',
+                margin: 0
+              }}
+            >
+              {showRiskLevels ? 'Turn Off Risk Analysis for Class' : 'Turn On Risk Analysis for Class'}
+            </button>
           </div>
+
+          {/* Conditional Rendering for the Risk Grid */}
+          {showRiskLevels && (
+            <div style={styles.grid}>
+              <div style={styles.item}>
+                <h3 style={styles.itemTitle}>High Risk</h3>
+                <p style={styles.highRisk}>
+                  {getClassPerformanceOverview().highRiskCount}
+                </p>
+              </div>
+              <div style={styles.item}>
+                <h3 style={styles.itemTitle}>Medium Risk</h3>
+                <p style={styles.mediumRisk}>
+                  {getClassPerformanceOverview().mediumRiskCount}
+                </p>
+              </div>
+              <div style={styles.item}>
+                <h3 style={styles.itemTitle}>Low Risk</h3>
+                <p style={styles.lowRisk}>
+                  {getClassPerformanceOverview().lowRiskCount}
+                </p>
+              </div>
+            </div>
+          )}
+
           <p style={styles.averageScore}>
             Average Score:{' '}
             {getClassPerformanceOverview().averageScore.toFixed(2)}%
@@ -1057,31 +1135,35 @@ const InstructorView = () => {
                     {calculateAverageScore(student.scores).toFixed(2)}%
                   </p>
                 </div>
+                
+                {/* Risk Tag - Hidden when showRiskLevels is false */}
                 <div>
-                  <span
-                    style={{
-                      ...styles.riskTag,
-                      ...(calculateRiskFactor(
+                  {showRiskLevels && (
+                    <span
+                      style={{
+                        ...styles.riskTag,
+                        ...(calculateRiskFactor(
+                          calculateAverageScore(student.scores)
+                        ) === 1
+                          ? styles.highRiskTag
+                          : calculateRiskFactor(
+                            calculateAverageScore(student.scores)
+                          ) === 0.5
+                            ? styles.mediumRiskTag
+                            : styles.lowRiskTag),
+                      }}
+                    >
+                      {calculateRiskFactor(
                         calculateAverageScore(student.scores)
                       ) === 1
-                        ? styles.highRiskTag
+                        ? 'High Risk'
                         : calculateRiskFactor(
                           calculateAverageScore(student.scores)
                         ) === 0.5
-                          ? styles.mediumRiskTag
-                          : styles.lowRiskTag),
-                    }}
-                  >
-                    {calculateRiskFactor(
-                      calculateAverageScore(student.scores)
-                    ) === 1
-                      ? 'High Risk'
-                      : calculateRiskFactor(
-                        calculateAverageScore(student.scores)
-                      ) === 0.5
-                        ? 'Medium Risk'
-                        : 'Low Risk'}
-                  </span>
+                          ? 'Medium Risk'
+                          : 'Low Risk'}
+                    </span>
+                  )}
                 </div>
               </li>
             ))}

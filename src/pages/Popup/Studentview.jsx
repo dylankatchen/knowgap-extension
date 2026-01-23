@@ -85,6 +85,7 @@ const StudentView = () => {
   const [userId, setUserId] = useState(null);
   const [quizzes, setQuizzes] = useState([]);
   const [selectedQuiz, setSelectedQuiz] = useState('');
+  const [isRiskEnabled, setIsRiskEnabled] = useState(true);
   const [watchedVideos, setWatchedVideos] = useState({});
 
   const imgs = { youtube };
@@ -332,46 +333,6 @@ const StudentView = () => {
     return formattedVideos;
   };
 
-  const updateCourseContext = async (courseId, assignments, grade, name) => {
-    try {
-      const contextResponse = await fetch(`${BACKEND_URL}/update-course-context`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Origin': 'chrome-extension://' + chrome.runtime.id
-        },
-        body: JSON.stringify({
-          course_id: courseId,
-          course_context: {
-            assignments: assignments,
-            class_grade: grade,
-            student_name: name
-          }
-        }),
-        mode: 'cors',
-        credentials: 'include'
-      });
-
-      const contextData = await contextResponse.json();
-      if (contextData.status === 'Error') {
-        throw new Error(contextData.message);
-      }
-
-      return {
-        status: 'success',
-        message: 'Course context updated successfully'
-      };
-    } catch (error) {
-      console.error('Error updating course context:', error);
-      setSyncError(error.message);
-      return {
-        status: 'error',
-        message: error.message
-      };
-    }
-  };
-
   const fetchQuizzes = async (courseId) => {
     const canvasDomain = getCanvasDomain();
     const storedToken = localStorage.getItem('apiToken');
@@ -492,6 +453,27 @@ const StudentView = () => {
       const storedToken = localStorage.getItem('apiToken');
       const baseUrl = getCanvasDomain();
 
+      if (courseId) {
+        try {
+          // Fix double slash issue if BACKEND_URL ends in /
+          const cleanUrl = BACKEND_URL.endsWith('/') ? BACKEND_URL.slice(0, -1) : BACKEND_URL;
+          
+          console.log(`Checking risk status for course ${courseId}...`);
+          const toggleResponse = await fetch(`${cleanUrl}/get-toggle-risk/${courseId}`);
+          
+          if (toggleResponse.ok) {
+            const toggleData = await toggleResponse.json();
+            // If the backend says toggle_risk is false, hide the UI. Default to true.
+            if (toggleData && typeof toggleData.toggle_risk !== 'undefined') {
+              setIsRiskEnabled(toggleData.toggle_risk);
+              console.log('Risk Analysis Enabled:', toggleData.toggle_risk);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching risk toggle status:', error);
+        }
+      }
+
       console.log('Debug - Initial conditions:', {
         courseId,
         hasToken: !!storedToken,
@@ -527,6 +509,19 @@ const StudentView = () => {
           console.error('Error calling /update-course-db:', error);
         }
 
+        try {
+          const riskToggleResponse = await fetch(`${BACKEND_URL}/get-toggle-risk/${courseId}`);
+          if (riskToggleResponse.ok) {
+            const riskToggleData = await riskToggleResponse.json();
+            // If toggle_risk is false, hide the UI. Otherwise default to true.
+            if (riskToggleData && typeof riskToggleData.toggle_risk !== 'undefined') {
+              setIsRiskEnabled(riskToggleData.toggle_risk);
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching risk toggle status:', error);
+        }
+
         // Fetch and set the student's grade from the backend
         try {
           const grade = await fetchStudentGrade(courseId, userId);
@@ -553,22 +548,6 @@ const StudentView = () => {
         // Fetch quizzes for the dropdown
         const quizzesData = await fetchQuizzes(courseId);
         setQuizzes(quizzesData);
-        // Update course context first
-        if (assignments.length > 0 && classGrade !== 'N/A' && studentName) {
-          try {
-            console.log('Debug - Updating course context with:', {
-              courseId,
-              assignments: assignments.length,
-              classGrade,
-              studentName
-            });
-            await updateCourseContext(courseId, assignments, classGrade, studentName);
-            console.log('Debug - Course context updated successfully');
-          } catch (error) {
-            console.error('Error updating course context:', error);
-          }
-        }
-
         // Then fetch video recommendations
         if (userId) {
           console.log('Debug - Fetching video recommendations for:', { userId, courseId });
@@ -766,25 +745,31 @@ const StudentView = () => {
                 {`Performance Overview for ${studentName || 'Student'}`}
               </h2>
               <div className="overview-grid" style={{ justifyContent: 'center', textAlign: 'center' }}>
-                <div>
-                  <h3 className="risk-level">Risk Level</h3>
-                  <p className={`risk-value ${getRiskLevelClass(riskLevel)}`}>
-                    {riskLevel}
-                  </p>
-                </div>
-                <div>
-                  <h3 className="risk-level">Class Grade</h3>
-                  <p className="risk-value average-score">
-                    {classGrade === null ? 'N/A' : `${classGrade}%`}
-                  </p>
-                </div>
-                <div>
-                  <h3 className="risk-level">Recommended Videos</h3>
-                  <p className="risk-value recommended-videos">
-                    {recommendedVideos.length}
-                  </p>
-                </div>
+              
+              {/* --- WRAP THIS DIV IN THE CONDITION --- */}
+              {isRiskEnabled && (
+                  <div>
+                    <h3 className="risk-level">Risk Level</h3>
+                    <p className={`risk-value ${getRiskLevelClass(riskLevel)}`}>
+                      {riskLevel}
+                    </p>
+                  </div>
+                )}
+              {/* -------------------------------------- */}
+
+              <div>
+                <h3 className="risk-level">Class Grade</h3>
+                <p className="risk-value average-score">
+                  {classGrade === null ? 'N/A' : `${classGrade}%`}
+                </p>
               </div>
+              <div>
+                <h3 className="risk-level">Recommended Videos</h3>
+                <p className="risk-value recommended-videos">
+                  {recommendedVideos.length}
+                </p>
+              </div>
+            </div>
             </div>
           </div>
         )}
