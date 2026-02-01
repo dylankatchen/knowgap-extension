@@ -12,21 +12,36 @@ const Popup = () => {
   const [isSyncingCourse, setIsSyncingCourse] = useState(false);
   const [syncError, setSyncError] = useState(null);
   const [tokenStatus, setTokenStatus] = useState('');
+  const [canvasInfo, setCanvasInfo] = useState({ baseUrl: null, courseId: null });
 
-  const getCanvasBaseUrl = () => {
-    const url = window.location.href;
-    const match = url.match(/(https?:\/\/[^\/]+)/);
-    return match ? match[1] : null;
-  };
+  const getCanvasInfo = async () => {
+    let url = window.location.href;
 
-  const fetchCurrentCourseId = () => {
-    const url = window.location.href;
-    const match = url.match(/\/courses\/(\d+)/);
-    return match && match[1] ? match[1] : null;
+    // Check if running in extension popup context
+    if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+      try {
+        const tabs = await new Promise(resolve => 
+          chrome.tabs.query({ active: true, currentWindow: true }, resolve)
+        );
+        if (tabs && tabs.length > 0) {
+          url = tabs[0].url;
+        }
+      } catch (e) {
+        console.error("Error getting tab URL:", e);
+      }
+    }
+
+    const baseUrlMatch = url.match(/(https?:\/\/[^\/]+)/);
+    const baseUrl = baseUrlMatch ? baseUrlMatch[1] : null;
+
+    const courseIdMatch = url.match(/\/courses\/(\d+)/);
+    const courseId = courseIdMatch && courseIdMatch[1] ? courseIdMatch[1] : null;
+
+    return { baseUrl, courseId };
   };
 
   const validateToken = async (token) => {
-    const baseUrl = getCanvasBaseUrl();
+    const { baseUrl } = await getCanvasInfo();
     if (!baseUrl) {
       setTokenStatus('Error: Unable to determine Canvas URL');
       return false;
@@ -46,7 +61,7 @@ const Popup = () => {
         throw new Error('Invalid token');
       }
 
-      const data = await response.json();
+      await response.json();
       setTokenStatus('Token validated successfully!');
       return true;
     } catch (error) {
@@ -138,8 +153,9 @@ const Popup = () => {
 
   useEffect(() => {
     const fetchUserRole = async () => {
-      const baseUrl = getCanvasBaseUrl();
-      const courseId = fetchCurrentCourseId();
+      const { baseUrl, courseId } = await getCanvasInfo();
+      setCanvasInfo({ baseUrl, courseId });
+
       const storedToken = localStorage.getItem('apiToken');
 
       if (!baseUrl || !courseId || !storedToken) {
@@ -162,7 +178,23 @@ const Popup = () => {
           requestOptions
         );
         const enrollmentData = await response.json();
-        const role = enrollmentData[0].type;
+        
+        // Better role checking: prioritize TeacherEnrollment
+        let role = '';
+        if (Array.isArray(enrollmentData)) {
+          const teacherEnrollment = enrollmentData.find(e => 
+            e.type === 'TeacherEnrollment' || 
+            e.type === 'DesignerEnrollment' || 
+            e.type === 'TaEnrollment'
+          );
+          
+          if (teacherEnrollment) {
+            role = 'TeacherEnrollment';
+          } else if (enrollmentData.length > 0) {
+            role = enrollmentData[0].type;
+          }
+        }
+        
         setUserRole(role);
 
         // Only instructors should call loadCourse
@@ -280,11 +312,11 @@ const Popup = () => {
             )}
             {userRole === 'TeacherEnrollment' ? (
               <>
-                <InstructorView />
+                <InstructorView baseUrl={canvasInfo.baseUrl} courseId={canvasInfo.courseId} />
               </>
             ) : userRole === 'StudentEnrollment' ? (
               <>
-                <StudentView />
+                <StudentView baseUrl={canvasInfo.baseUrl} courseId={canvasInfo.courseId} />
               </>
             ) : (
               <p style={{ textAlign: 'center', marginTop: '2rem', fontWeight: 500 }}>

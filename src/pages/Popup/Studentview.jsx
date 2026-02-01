@@ -70,7 +70,7 @@ const normalizeRiskLevel = (riskLevel) => {
   return level; // Returns "low", "medium", or "high"
 };
 
-const StudentView = () => {
+const StudentView = ({ baseUrl, courseId }) => {
   const [activeTab, setActiveTab] = useState('assignments');
   const [assignments, setAssignments] = useState([]);
   const [recommendedVideos, setRecommendedVideos] = useState([]);
@@ -90,12 +90,16 @@ const StudentView = () => {
   const imgs = { youtube };
 
   const getCanvasDomain = () => {
+    if (baseUrl) {
+      return baseUrl.replace(/^https?:\/\//, '');
+    }
     const url = window.location.href;
     const match = url.match(/^https?:\/\/(.*?)(?:\/|$)/);
     return match ? match[1] : null;
   };
 
   const fetchCurrentCourseId = () => {
+    if (courseId) return courseId;
     const url = window.location.href;
     const match = url.match(/\/courses\/(\d+)/);
     if (match && match[1]) {

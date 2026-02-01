@@ -5,7 +5,7 @@ import youtube from '../Popup/imgs/youtube.png';
 // Add backend URL constant
 const BACKEND_URL = process.env.BACKEND_URL;
 
-const InstructorView = () => {
+const InstructorView = ({ baseUrl, courseId }) => {
   const [activeTab, setActiveTab] = useState('assignments');
   const [students, setStudents] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -33,12 +33,14 @@ const InstructorView = () => {
   const imgs = { youtube: '/path/to/youtube/icon.png' };
 
   const getCanvasBaseUrl = () => {
+    if (baseUrl) return baseUrl;
     const url = window.location.href;
     const match = url.match(/(https?:\/\/[^\/]+)/);
     return match ? match[1] : null;
   };
 
   const fetchCurrentCourseId = () => {
+    if (courseId) return courseId;
     const url = window.location.href;
     const match = url.match(/\/courses\/(\d+)/);
     return match && match[1] ? match[1] : null;
@@ -601,7 +603,7 @@ const InstructorView = () => {
     }
 
     try {
-      const response = await fetch(`${BACKEND_URL}add-video`, {
+      const response = await fetch(`${BACKEND_URL}/add-video`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
